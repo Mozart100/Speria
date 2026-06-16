@@ -212,7 +212,7 @@ interface GifUrlsResponse {
 
 ## State Management
 
-React built-in (`useState`) — no external library needed at this scale.
+React built-in `useState` and `useRef` only — no Redux, Zustand, or any external state library. The app is intentionally small and all state fits cleanly in a single page component. If the feature set grows (favorites, pagination, user sessions), a dedicated state library can be introduced at that point.
 
 | State | Type | Owner |
 |---|---|---|
