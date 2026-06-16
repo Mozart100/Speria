@@ -8,28 +8,42 @@ using System.Reflection;
 var builder = WebApplication.CreateBuilder(args);
 
 // ------------------------------------------------------------------
-// 1. Environment variable override
-//    Map GIPHY_API_KEY → Giphy:ApiKey so the standard IOptions<GiphyOptions>
-//    binding picks it up transparently, regardless of how it was named in
-//    the environment.
+// 1. Serilog — must be configured first so all subsequent logs go through it
+// ------------------------------------------------------------------
+builder.AddSerilogLogging();
+
+// ------------------------------------------------------------------
+// 2. Environment variable overrides
+//    Map flat env vars (GIPHY_API_KEY, GIPHY_BASE_URL) into the
+//    nested "Giphy:" config section consumed by IOptions<GiphyOptions>.
 // ------------------------------------------------------------------
 var giphyApiKeyFromEnv = Environment.GetEnvironmentVariable("GIPHY_API_KEY");
 if (!string.IsNullOrWhiteSpace(giphyApiKeyFromEnv))
     builder.Configuration["Giphy:ApiKey"] = giphyApiKeyFromEnv;
 
+var giphyBaseUrlFromEnv = Environment.GetEnvironmentVariable("GIPHY_BASE_URL");
+if (!string.IsNullOrWhiteSpace(giphyBaseUrlFromEnv))
+{
+    // Normalise to always end with /v1/ so relative paths in GiphyHttpClient work correctly.
+    var baseUrl = giphyBaseUrlFromEnv.TrimEnd('/');
+    if (!baseUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase))
+        baseUrl += "/v1";
+    builder.Configuration["Giphy:BaseUrl"] = baseUrl + "/";
+}
+
 // ------------------------------------------------------------------
-// 2. Configuration
+// 3. Configuration
 // ------------------------------------------------------------------
 builder.Services
     .Configure<GiphyOptions>(builder.Configuration.GetSection(GiphyOptions.SectionName));
 
 // ------------------------------------------------------------------
-// 3. AutoMapper
+// 4. AutoMapper
 // ------------------------------------------------------------------
 builder.Services.AddAutoMapper(typeof(AutoMapperProfile));
 
 // ------------------------------------------------------------------
-// 4. HTTP Clients (typed, via HttpClientFactory)
+// 5. HTTP Clients (typed, via HttpClientFactory)
 // ------------------------------------------------------------------
 builder.Services
     .AddHttpClient<IGiphyClient, GiphyHttpClient>(client =>
@@ -41,17 +55,26 @@ builder.Services
     });
 
 // ------------------------------------------------------------------
-// 5. Application services
+// 6. Application services
 // ------------------------------------------------------------------
 builder.Services.AddScoped<IGifService, GiphyGifService>();
 
 // ------------------------------------------------------------------
-// 6. MVC / Controllers
+// 7. MVC / Controllers
 // ------------------------------------------------------------------
 builder.Services.AddControllers();
 
 // ------------------------------------------------------------------
-// 7. API docs (Swagger / OpenAPI)
+// 8. CORS — permissive in Development; client runs on a different origin locally
+// ------------------------------------------------------------------
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+        policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
+});
+
+// ------------------------------------------------------------------
+// 9. API docs (Swagger / OpenAPI)
 // ------------------------------------------------------------------
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
@@ -63,7 +86,6 @@ builder.Services.AddSwaggerGen(options =>
         Description = "Returns GIF URLs from the Giphy platform."
     });
 
-    // Include XML comments for Swagger UI
     var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
     var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
     if (File.Exists(xmlPath))
@@ -71,14 +93,14 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 // ------------------------------------------------------------------
-// 8. Problem details (global error responses)
+// 10. Problem details (global error responses)
 // ------------------------------------------------------------------
 builder.Services.AddProblemDetails();
 
 var app = builder.Build();
 
 // ------------------------------------------------------------------
-// 9. Middleware pipeline
+// 11. Middleware pipeline
 // ------------------------------------------------------------------
 if (app.Environment.IsDevelopment())
 {
@@ -86,7 +108,6 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI(ui => ui.SwaggerEndpoint("/swagger/v1/swagger.json", "GiphyServer API v1"));
 }
 
-// Global exception handler — returns RFC 7807 Problem Details on unhandled exceptions.
 app.UseExceptionHandler(errorApp =>
 {
     errorApp.Run(async context =>
@@ -107,7 +128,8 @@ app.UseExceptionHandler(errorApp =>
     });
 });
 
-app.UseHttpsRedirection();
+app.UseCors();
+app.UseRequestLogging();
 app.MapControllers();
 
 app.Run();

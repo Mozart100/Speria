@@ -1,0 +1,52 @@
+version: "3.9"
+
+services:
+  seq:
+    image: datalust/seq:latest
+    container_name: seq
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+    ports:
+      - "5341:80"
+    networks:
+      - app-network
+
+  server:
+    build:
+      context: ./server
+    container_name: giphy-server
+    restart: unless-stopped
+    depends_on:
+      - seq
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Development"
+      ASPNETCORE_URLS: "http://+:8080"
+      GIPHY_API_KEY: "zpNucV44EYMX7KI2bShFsx08ANrHqRK1"
+      GIPHY_BASE_URL: "https://api.giphy.com"
+      SEQ_URL: "http://seq:80"
+    ports:
+      - "8080:8080"
+    networks:
+      - app-network
+
+  client:
+    build:
+      context: ./client
+    container_name: giphy-client
+    restart: unless-stopped
+    depends_on:
+      - server
+    environment:
+      # Empty so browser fetch uses relative paths (/api/...) that Next.js rewrites to the server
+      NEXT_PUBLIC_API_BASE_URL: ""
+      # Server-side env var consumed by next.config.ts rewrites — not exposed to the browser
+      API_BASE_URL: "http://server:8080"
+    ports:
+      - "3000:3000"
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge

@@ -1,6 +1,8 @@
 import type { GifUrlsResponse } from '@/models/gifModels';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
+// Empty string → relative URL (/api/...) so Next.js rewrites handle the proxy.
+// Set NEXT_PUBLIC_API_BASE_URL to a full URL to bypass rewrites (e.g. direct localhost access).
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? '';
 
 async function get<T>(path: string): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`);

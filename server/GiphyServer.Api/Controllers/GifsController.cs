@@ -11,11 +11,13 @@ namespace GiphyServer.Api.Controllers;
 public sealed class GifsController : ControllerBase
 {
     private readonly IGifService _gifService;
+    private readonly ILogger<GifsController> _logger;
 
     /// <summary>Initialises a new instance of <see cref="GifsController"/>.</summary>
-    public GifsController(IGifService gifService)
+    public GifsController(IGifService gifService, ILogger<GifsController> logger)
     {
         _gifService = gifService;
+        _logger = logger;
     }
 
     /// <summary>Returns a collection of currently trending GIF URLs.</summary>
@@ -27,7 +29,12 @@ public sealed class GifsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status502BadGateway)]
     public async Task<ActionResult<GifUrlsResponse>> GetTrending(CancellationToken cancellationToken)
     {
+        _logger.LogInformation("Received request for trending GIFs");
+
         var result = await _gifService.GetTrendingAsync(cancellationToken);
+
+        _logger.LogInformation("Returning {GifCount} trending GIFs", result.Gifs.Count);
+
         return Ok(result);
     }
 
@@ -48,7 +55,12 @@ public sealed class GifsController : ControllerBase
         if (string.IsNullOrWhiteSpace(term))
             return BadRequest("The 'term' query parameter is required and cannot be empty.");
 
+        _logger.LogInformation("Received Giphy search request {SearchTerm}", term);
+
         var result = await _gifService.SearchAsync(term, cancellationToken);
+
+        _logger.LogInformation("Returning {GifCount} GIFs for search term {SearchTerm}", result.Gifs.Count, term);
+
         return Ok(result);
     }
 }
