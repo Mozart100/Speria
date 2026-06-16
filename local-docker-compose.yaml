@@ -13,10 +13,11 @@ services:
     networks:
       - app-network
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost"]
+      test: ["CMD", "curl", "-fs", "http://localhost/api/diagnostics/status"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
 
   redis:
     image: redis:7-alpine
@@ -67,7 +68,7 @@ services:
     networks:
       - app-network
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-fs", "http://localhost:8080/health"]
       interval: 10s
       timeout: 5s
       retries: 5

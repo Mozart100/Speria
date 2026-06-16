@@ -89,8 +89,8 @@ All inter-service dependencies use `condition: service_healthy`, so Docker Compo
 
 ```
 redis   → healthy (redis-cli ping)
-seq     → healthy (wget http://localhost)
-server  → healthy (wget http://localhost:8080/health)
+seq     → healthy (curl http://localhost/api/diagnostics/status)
+server  → healthy (curl http://localhost:8080/health)
 client  → starts
 ```
 

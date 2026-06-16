@@ -150,7 +150,6 @@ app.UseExceptionHandler(errorApp =>
 
 app.UseCors();
 app.UseRequestLogging();
-app.MapHealthChecks("/health");
 app.MapControllers();
 
 app.Run();
