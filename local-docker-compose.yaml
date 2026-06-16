@@ -84,7 +84,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: "Development"
       ASPNETCORE_URLS: "http://+:8080"
-      GIPHY_API_KEY: "zpNucV44EYMX7KI2bShFsx08ANrHqRK1"
+      GIPHY_API_KEY: "VQGibXe03hQ0kkflug0Ll4HHuRlafw7R"
       GIPHY_BASE_URL: "https://api.giphy.com"
       SEQ_URL: "http://seq:80"
       REDIS_CONNECTION_STRING: "redis:6379"
