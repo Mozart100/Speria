@@ -11,4 +11,7 @@ public sealed class GiphyOptions
 
     /// <summary>Giphy API key. Supplied via the GIPHY_API_KEY environment variable.</summary>
     public string ApiKey { get; init; } = string.Empty;
+
+    /// <summary>Maximum number of GIFs returned per request (1–50). Default: 20.</summary>
+    public int ResultLimit { get; init; } = 20;
 }

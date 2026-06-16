@@ -35,6 +35,10 @@ var cacheTtl = Environment.GetEnvironmentVariable("CACHE_TTL_MINUTES");
 if (!string.IsNullOrWhiteSpace(cacheTtl) && int.TryParse(cacheTtl, out var ttlMinutes))
     builder.Configuration["Cache:TtlMinutes"] = ttlMinutes.ToString();
 
+var resultLimit = Environment.GetEnvironmentVariable("GIPHY_RESULT_LIMIT");
+if (!string.IsNullOrWhiteSpace(resultLimit) && int.TryParse(resultLimit, out var limit))
+    builder.Configuration["Giphy:ResultLimit"] = Math.Clamp(limit, 1, 50).ToString();
+
 // ------------------------------------------------------------------
 // 3. Strongly-typed configuration
 // ------------------------------------------------------------------

@@ -18,17 +18,20 @@ public sealed class GiphyHttpClient : IGiphyClient
     private readonly string _apiKey;
     private readonly ILogger<GiphyHttpClient> _logger;
 
+    private readonly int _limit;
+
     public GiphyHttpClient(HttpClient httpClient, IOptions<GiphyOptions> options, ILogger<GiphyHttpClient> logger)
     {
         _httpClient = httpClient;
         _apiKey = options.Value.ApiKey;
+        _limit = options.Value.ResultLimit;
         _logger = logger;
     }
 
     /// <inheritdoc/>
     public Task<GiphyResponse> GetTrendingAsync(CancellationToken cancellationToken = default)
     {
-        var url = $"gifs/trending?api_key={_apiKey}&limit=20";
+        var url = $"gifs/trending?api_key={_apiKey}&limit={_limit}";
         return FetchAsync(url, endpoint: "trending", searchTerm: null, cancellationToken);
     }
 
@@ -36,7 +39,7 @@ public sealed class GiphyHttpClient : IGiphyClient
     public Task<GiphyResponse> SearchAsync(string term, CancellationToken cancellationToken = default)
     {
         var encodedTerm = Uri.EscapeDataString(term);
-        var url = $"gifs/search?api_key={_apiKey}&q={encodedTerm}&limit=20";
+        var url = $"gifs/search?api_key={_apiKey}&q={encodedTerm}&limit={_limit}";
         return FetchAsync(url, endpoint: "search", searchTerm: term, cancellationToken);
     }
 

@@ -63,6 +63,7 @@ services:
       SEQ_URL: "http://seq:80"
       REDIS_CONNECTION_STRING: "redis:6379"
       CACHE_TTL_MINUTES: "60"
+      GIPHY_RESULT_LIMIT: "50"
     ports:
       - "8080:8080"
     networks:
