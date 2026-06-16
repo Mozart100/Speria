@@ -8,14 +8,16 @@ Build a clean, professional React + Next.js frontend that lets users:
 - Search for GIFs by entering a text term.
 - See loading, error, and empty states for every operation.
 
-The UI must be responsive, production-like, and organised so that API logic is fully separated from rendering logic.
+The UI is responsive, production-like, and organised so that API logic is fully separated from rendering logic.
 
 ---
 
-## Expected Directory Structure
+## Directory Structure
 
 ```
 client/
+├── Dockerfile
+├── .dockerignore
 ├── Docs/
 │   └── PLAN.md
 ├── app/
@@ -31,11 +33,70 @@ client/
 │   └── gifApi.ts           # All fetch calls — never inside components
 ├── models/
 │   └── gifModels.ts        # TypeScript interfaces for API contracts
-├── .env.local              # NEXT_PUBLIC_API_BASE_URL
+├── next.config.ts          # Next.js config with API rewrites
 ├── package.json
-├── next.config.ts
 └── tsconfig.json
 ```
+
+---
+
+## Docker Configuration
+
+### Dockerfile
+
+```
+Base image:   node:20-alpine
+Install:      npm ci
+Run mode:     next dev (development mode — reads env vars at startup)
+Exposed port: 3000
+```
+
+### Backend Connection in Docker
+
+The client communicates with the backend using the Docker service name. Because this is a `'use client'` component making browser-side `fetch` calls, `http://server:8080` is not directly reachable from the browser. Instead, Next.js rewrites are used as a proxy:
+
+```
+Browser → fetch('/api/gifs/trending')
+        → Next.js server (localhost:3000)
+        → rewrites to http://server:8080/api/gifs/trending   [Docker internal]
+        → ASP.NET Core server
+```
+
+### Environment Variables
+
+| Variable | Value in Docker | Purpose |
+|---|---|---|
+| `NEXT_PUBLIC_API_BASE_URL` | `""` (empty) | Browser uses relative `/api/...` paths through the Next.js rewrite |
+| `API_BASE_URL` | `http://server:8080` | Server-side only — rewrite destination inside Docker network |
+
+**Why not `NEXT_PUBLIC_API_BASE_URL: http://server:8080`?**
+`NEXT_PUBLIC_*` values are baked into the browser bundle at build time and are used directly in `fetch()` calls. The browser cannot resolve `server:8080` (a Docker-internal hostname). Setting `NEXT_PUBLIC_API_BASE_URL` to empty and using a Next.js rewrite is the correct approach.
+
+### next.config.ts Rewrite
+
+```typescript
+async rewrites() {
+  const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
+  return [{ source: '/api/:path*', destination: `${apiUrl}/api/:path*` }];
+}
+```
+
+### Local Development (without Docker)
+
+```bash
+# Start the ASP.NET Core server on port 8080, then:
+cd client
+npm install
+npm run dev
+```
+
+The `API_BASE_URL` defaults to `http://localhost:8080` in `next.config.ts` when the env var is not set, so `npm run dev` works out of the box.
+
+---
+
+## Caching Note
+
+**Redis caching exists only on the server.** The client has no knowledge of caching. From the client's perspective, every API call goes to the ASP.NET Core server which transparently returns cached or fresh results. The client always calls the same endpoints regardless of cache state.
 
 ---
 
@@ -51,18 +112,18 @@ The only stateful component. Owns:
 Passes callbacks (`onTrending`, `onSearch`) down to `GifSearch` so child components stay stateless.
 
 ### `components/GifSearch.tsx`
-Contains the **Load Trending GIFs** button and the search input + **Search** button.  
+Contains the **Load Trending GIFs** button and the search input + **Search** button.
 Manages only its own local input state (`term`). All async work is delegated upward via props.
 
 ### `components/GifGrid.tsx`
-Accepts `gifs: GifUrlResponse[]`. Renders a responsive CSS-columns grid.  
+Accepts `gifs: GifUrlResponse[]`. Renders a responsive CSS-columns grid.
 Shows an inline empty-state message when the array is empty.
 
 ### `components/LoadingState.tsx`
 A pure presentational spinner with a label. No props.
 
 ### `components/ErrorMessage.tsx`
-Receives `message: string` and renders a styled error alert.
+Receives `message: string` and renders a styled error alert with ARIA role.
 
 ---
 
@@ -76,26 +137,14 @@ GifSearch (user interaction)
 page.tsx (state owner)
     ↓ calls
 gifApi.ts (fetch + error handling)
-    ↓ HTTP
-ASP.NET Core server → Giphy API
+    ↓ /api/gifs/trending  (relative — goes through Next.js rewrite)
+ASP.NET Core server
+    ↓ CachingGiphyServiceDecorator checks Redis
+    ↓ GiphyGifService + GiphyHttpClient (on cache miss)
+Giphy API
 ```
 
 The service layer throws a typed `Error` on non-OK responses, which the page catches and surfaces via the `error` state.
-
----
-
-## Environment Variables
-
-| Variable | Purpose |
-|---|---|
-| `NEXT_PUBLIC_API_BASE_URL` | Base URL of the ASP.NET Core server. Never hardcoded in components. |
-
-Set in `.env.local`:
-```
-NEXT_PUBLIC_API_BASE_URL=http://localhost:5000
-```
-
-> **Note:** The `NEXT_PUBLIC_` prefix makes the variable available in browser bundles. Keep any secrets server-side only (without the prefix).
 
 ---
 
@@ -114,11 +163,9 @@ interface GifUrlsResponse {
 }
 ```
 
-> **CORS:** The server must allow `http://localhost:3000` during development. Add `builder.Services.AddCors(...)` and `app.UseCors(...)` in the server's `Program.cs` if requests are blocked.
-
 ---
 
-## State Management Approach
+## State Management
 
 React built-in (`useState`) — no external library needed at this scale.
 
@@ -144,52 +191,40 @@ React built-in (`useState`) — no external library needed at this scale.
 
 ---
 
-## Step-by-Step Implementation Plan
+## Final URLs
 
-1. **Create `models/gifModels.ts`** — TypeScript interfaces matching server response.
-2. **Create `services/gifApi.ts`** — `fetchTrendingGifs` and `searchGifs`, reading `NEXT_PUBLIC_API_BASE_URL`.
-3. **Create `components/LoadingState.tsx`** — spinner, no props.
-4. **Create `components/ErrorMessage.tsx`** — receives `message: string`.
-5. **Create `components/GifGrid.tsx`** — receives `gifs[]`, renders grid + empty state.
-6. **Create `components/GifSearch.tsx`** — trending button, search input + button; delegates via props.
-7. **Create `app/globals.css`** — reset, layout, grid, button, spinner, error, empty state styles.
-8. **Create `app/layout.tsx`** — root layout with metadata and CSS import.
-9. **Create `app/page.tsx`** — state management, async handlers, composition of all components.
-10. **Create `.env.local`** — `NEXT_PUBLIC_API_BASE_URL=http://localhost:5000`.
-11. **Create `next.config.ts`** — minimal config.
-12. **Create `tsconfig.json`** — strict TypeScript, `@/*` path alias.
-13. **Create `package.json`** — Next.js 15, React 19, TypeScript.
-14. **Verify** `npm install && npm run dev` starts cleanly on `http://localhost:3000`.
+| Service | URL |
+|---|---|
+| Client | http://localhost:3000 |
+| Server | http://localhost:8080 |
+| Seq | http://localhost:5341 |
+| RedisInsight | http://localhost:5540 |
+
+Run everything:
+```bash
+docker compose -f local-docker-compose.yaml up --build
+```
 
 ---
 
 ## Future Improvements
 
 ### Pagination & Infinite Scroll
-Add `limit` / `offset` parameters to the service functions. `GifGrid` can emit an "load more" trigger. Infinite scroll via `IntersectionObserver`.
-
-### Client-Side Caching
-Wrap service calls with an in-memory map (`term → GifUrlsResponse`) so repeated searches skip the network. Or adopt **SWR** or **React Query** for cache + revalidation out of the box.
+Add `limit` / `offset` parameters to the service functions. `GifGrid` can emit a "load more" trigger.
 
 ### Search History
 Store recent search terms in `localStorage` and surface them as suggestions below the input.
 
 ### Skeleton Loaders
-Replace `<LoadingState />` with a `<GifGridSkeleton />` that renders placeholder cards matching the grid layout.
+Replace `<LoadingState />` with a `<GifGridSkeleton />` that renders placeholder cards.
 
 ### Favorites
 Let users star GIFs. Persist starred URLs to `localStorage`. Add a "Favorites" tab.
 
-### Dark Mode
-Respect `prefers-color-scheme` via CSS custom properties. Add a toggle button stored in `localStorage`.
+### React Query / SWR
+Replace manual `loading` / `error` state with `useQuery` for automatic background refetch and retry logic.
 
 ### Unit Tests
-- Test `gifApi.ts` with `fetch` mocked via MSW or `jest.fn()`.
-- Test components with React Testing Library (`@testing-library/react`).
+- Test `gifApi.ts` with `fetch` mocked via MSW.
+- Test components with React Testing Library.
 - Test empty/loading/error state rendering.
-
-### Better Error Handling
-Distinguish network errors from server errors (4xx vs 5xx). Show actionable messages ("Check your connection" vs "Server error, try again later").
-
-### React Query / SWR
-Replace manual `loading` / `error` state with `useQuery` for automatic background refetch, stale-while-revalidate, and retry logic.

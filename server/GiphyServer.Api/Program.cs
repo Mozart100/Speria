@@ -1,6 +1,5 @@
 using GiphyServer.Api.Clients;
 using GiphyServer.Api.Configuration;
-using GiphyServer.Api.Services;
 using GiphyServer.Api.Startup;
 using Microsoft.AspNetCore.Mvc;
 using System.Reflection;
@@ -8,34 +7,39 @@ using System.Reflection;
 var builder = WebApplication.CreateBuilder(args);
 
 // ------------------------------------------------------------------
-// 1. Serilog — must be configured first so all subsequent logs go through it
+// 1. Serilog — configured first so every subsequent log uses it
 // ------------------------------------------------------------------
 builder.AddSerilogLogging();
 
 // ------------------------------------------------------------------
 // 2. Environment variable overrides
-//    Map flat env vars (GIPHY_API_KEY, GIPHY_BASE_URL) into the
-//    nested "Giphy:" config section consumed by IOptions<GiphyOptions>.
+//    Flat env vars → nested config sections consumed by IOptions<T>.
 // ------------------------------------------------------------------
-var giphyApiKeyFromEnv = Environment.GetEnvironmentVariable("GIPHY_API_KEY");
-if (!string.IsNullOrWhiteSpace(giphyApiKeyFromEnv))
-    builder.Configuration["Giphy:ApiKey"] = giphyApiKeyFromEnv;
+var giphyApiKey = Environment.GetEnvironmentVariable("GIPHY_API_KEY");
+if (!string.IsNullOrWhiteSpace(giphyApiKey))
+    builder.Configuration["Giphy:ApiKey"] = giphyApiKey;
 
-var giphyBaseUrlFromEnv = Environment.GetEnvironmentVariable("GIPHY_BASE_URL");
-if (!string.IsNullOrWhiteSpace(giphyBaseUrlFromEnv))
+var giphyBaseUrl = Environment.GetEnvironmentVariable("GIPHY_BASE_URL");
+if (!string.IsNullOrWhiteSpace(giphyBaseUrl))
 {
-    // Normalise to always end with /v1/ so relative paths in GiphyHttpClient work correctly.
-    var baseUrl = giphyBaseUrlFromEnv.TrimEnd('/');
+    var baseUrl = giphyBaseUrl.TrimEnd('/');
     if (!baseUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase))
         baseUrl += "/v1";
     builder.Configuration["Giphy:BaseUrl"] = baseUrl + "/";
 }
 
+var cacheTtl = Environment.GetEnvironmentVariable("CACHE_TTL_MINUTES");
+if (!string.IsNullOrWhiteSpace(cacheTtl) && int.TryParse(cacheTtl, out var ttlMinutes))
+    builder.Configuration["Cache:TtlMinutes"] = ttlMinutes.ToString();
+
 // ------------------------------------------------------------------
-// 3. Configuration
+// 3. Strongly-typed configuration
 // ------------------------------------------------------------------
-builder.Services
-    .Configure<GiphyOptions>(builder.Configuration.GetSection(GiphyOptions.SectionName));
+builder.Services.Configure<GiphyOptions>(
+    builder.Configuration.GetSection(GiphyOptions.SectionName));
+
+builder.Services.Configure<CacheOptions>(
+    builder.Configuration.GetSection(CacheOptions.SectionName));
 
 // ------------------------------------------------------------------
 // 4. AutoMapper
@@ -43,7 +47,7 @@ builder.Services
 builder.Services.AddAutoMapper(typeof(AutoMapperProfile));
 
 // ------------------------------------------------------------------
-// 5. HTTP Clients (typed, via HttpClientFactory)
+// 5. Typed HttpClient — IGiphyClient → GiphyHttpClient
 // ------------------------------------------------------------------
 builder.Services
     .AddHttpClient<IGiphyClient, GiphyHttpClient>(client =>
@@ -55,26 +59,30 @@ builder.Services
     });
 
 // ------------------------------------------------------------------
-// 6. Application services
+// 6. Redis + ICacheService
 // ------------------------------------------------------------------
-builder.Services.AddScoped<IGifService, GiphyGifService>();
+builder.AddRedis();
 
 // ------------------------------------------------------------------
-// 7. MVC / Controllers
+// 7. Application services — decorator chain:
+//    IGifService → CachingGiphyServiceDecorator → GiphyGifService
+// ------------------------------------------------------------------
+builder.Services.AddGifServices();
+
+// ------------------------------------------------------------------
+// 8. MVC / Controllers
 // ------------------------------------------------------------------
 builder.Services.AddControllers();
 
 // ------------------------------------------------------------------
-// 8. CORS — permissive in Development; client runs on a different origin locally
+// 9. CORS — permissive for local development
 // ------------------------------------------------------------------
 builder.Services.AddCors(options =>
-{
     options.AddDefaultPolicy(policy =>
-        policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
-});
+        policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
 
 // ------------------------------------------------------------------
-// 9. API docs (Swagger / OpenAPI)
+// 10. API docs
 // ------------------------------------------------------------------
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
@@ -93,19 +101,20 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 // ------------------------------------------------------------------
-// 10. Problem details (global error responses)
+// 11. Problem details
 // ------------------------------------------------------------------
 builder.Services.AddProblemDetails();
 
 var app = builder.Build();
 
 // ------------------------------------------------------------------
-// 11. Middleware pipeline
+// 12. Middleware pipeline
 // ------------------------------------------------------------------
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-    app.UseSwaggerUI(ui => ui.SwaggerEndpoint("/swagger/v1/swagger.json", "GiphyServer API v1"));
+    app.UseSwaggerUI(ui =>
+        ui.SwaggerEndpoint("/swagger/v1/swagger.json", "GiphyServer API v1"));
 }
 
 app.UseExceptionHandler(errorApp =>
@@ -120,7 +129,9 @@ app.UseExceptionHandler(errorApp =>
             Status = StatusCodes.Status500InternalServerError,
             Title = "An unexpected error occurred.",
             Detail = app.Environment.IsDevelopment()
-                ? context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()?.Error.Message
+                ? context.Features
+                    .Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()
+                    ?.Error.Message
                 : null
         };
 

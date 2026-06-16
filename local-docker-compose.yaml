@@ -13,6 +13,26 @@ services:
     networks:
       - app-network
 
+  redis:
+    image: redis:7-alpine
+    container_name: giphy-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - app-network
+
+  redis-ui:
+    image: redis/redisinsight:latest
+    container_name: redis-ui
+    restart: unless-stopped
+    depends_on:
+      - redis
+    ports:
+      - "5540:5540"
+    networks:
+      - app-network
+
   server:
     build:
       context: ./server
@@ -20,12 +40,15 @@ services:
     restart: unless-stopped
     depends_on:
       - seq
+      - redis
     environment:
       ASPNETCORE_ENVIRONMENT: "Development"
       ASPNETCORE_URLS: "http://+:8080"
       GIPHY_API_KEY: "zpNucV44EYMX7KI2bShFsx08ANrHqRK1"
       GIPHY_BASE_URL: "https://api.giphy.com"
       SEQ_URL: "http://seq:80"
+      REDIS_CONNECTION_STRING: "redis:6379"
+      CACHE_TTL_MINUTES: "60"
     ports:
       - "8080:8080"
     networks:
@@ -39,9 +62,9 @@ services:
     depends_on:
       - server
     environment:
-      # Empty so browser fetch uses relative paths (/api/...) that Next.js rewrites to the server
+      # Empty → browser fetch uses relative /api/... paths that Next.js rewrites to the server.
       NEXT_PUBLIC_API_BASE_URL: ""
-      # Server-side env var consumed by next.config.ts rewrites — not exposed to the browser
+      # Server-side only — consumed by next.config.ts rewrites, never sent to the browser.
       API_BASE_URL: "http://server:8080"
     ports:
       - "3000:3000"
