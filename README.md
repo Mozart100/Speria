@@ -10,6 +10,12 @@ A full-stack GIF browser powered by the [Giphy API](https://developers.giphy.com
 
 ---
 
+## Demo
+
+<video src="Tutorial.mp4" controls width="100%"></video>
+
+---
+
 ## Architecture
 
 ```
