@@ -6,7 +6,7 @@ import GifGrid from '@/components/GifGrid';
 import LoadingState from '@/components/LoadingState';
 import ErrorMessage from '@/components/ErrorMessage';
 import ThemeToggle from '@/components/ThemeToggle';
-import { fetchTrendingGifs, searchGifs, ApiError } from '@/services/gifApi';
+import { fetchTrendingGifs, searchGifs, clearCache, ApiError } from '@/services/gifApi';
 import type { GifUrlResponse } from '@/models/gifModels';
 
 type LastAction = { type: 'trending' } | { type: 'search'; term: string };
@@ -18,6 +18,7 @@ export default function Home() {
   const [hasLoaded, setHasLoaded] = useState(false);
   const [searchTerm, setSearchTerm] = useState<string | undefined>(undefined);
   const [status, setStatus] = useState<string | null>(null);
+  const [cacheClearing, setCacheClearing] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const lastActionRef = useRef<LastAction | null>(null);
@@ -65,6 +66,18 @@ export default function Home() {
     if (lastActionRef.current) execute(lastActionRef.current);
   }, [execute]);
 
+  const handleClearCache = useCallback(async () => {
+    setCacheClearing(true);
+    try {
+      await clearCache();
+      setStatus('Cache reset.');
+    } catch {
+      setStatus('Failed to reset cache.');
+    } finally {
+      setCacheClearing(false);
+    }
+  }, []);
+
   return (
     <div className="app-wrapper">
       <ThemeToggle />
@@ -74,7 +87,18 @@ export default function Home() {
 
         <GifSearch onTrending={handleTrending} onSearch={handleSearch} isLoading={loading} />
 
-        {!loading && status && <p className="status-text">{status}</p>}
+        {!loading && status && (
+          <div className="status-row">
+            <p className="status-text">{status}</p>
+            <button
+              className="btn btn-ghost"
+              onClick={handleClearCache}
+              disabled={cacheClearing || loading}
+            >
+              {cacheClearing ? 'Resetting…' : 'Reset Cache'}
+            </button>
+          </div>
+        )}
 
         {loading && <LoadingState />}
         {!loading && error && <ErrorMessage message={error} onRetry={handleRetry} />}

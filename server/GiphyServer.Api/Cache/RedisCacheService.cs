@@ -5,11 +5,13 @@ namespace GiphyServer.Api.Cache;
 
 public sealed class RedisCacheService : ICacheService
 {
+    private readonly IConnectionMultiplexer _multiplexer;
     private readonly IDatabase _db;
     private readonly ILogger<RedisCacheService> _logger;
 
     public RedisCacheService(IConnectionMultiplexer multiplexer, ILogger<RedisCacheService> logger)
     {
+        _multiplexer = multiplexer;
         _db = multiplexer.GetDatabase();
         _logger = logger;
     }
@@ -41,6 +43,25 @@ public sealed class RedisCacheService : ICacheService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Redis SET failed for key {CacheKey}. Cache write skipped.", key);
+        }
+    }
+
+    public async Task ClearAsync()
+    {
+        try
+        {
+            var endpoint = _multiplexer.GetEndPoints()[0];
+            var server   = _multiplexer.GetServer(endpoint);
+            var keys     = server.Keys(pattern: "giphy:*").ToArray();
+
+            if (keys.Length > 0)
+                await _db.KeyDeleteAsync(keys);
+
+            _logger.LogInformation("Cache cleared. Removed {Count} key(s).", keys.Length);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to clear cache.");
         }
     }
 }

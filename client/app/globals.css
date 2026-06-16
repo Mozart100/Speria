@@ -130,12 +130,18 @@ body {
   cursor: not-allowed;
 }
 
-/* ── Status text ─────────────────────────────────────────── */
+/* ── Status row ──────────────────────────────────────────── */
+.status-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-bottom: 1.75rem;
+}
+
 .status-text {
-  text-align: center;
   font-size: 0.9375rem;
   color: var(--text-muted);
-  margin-bottom: 1.75rem;
 }
 
 /* ── Buttons ─────────────────────────────────────────────── */
@@ -172,6 +178,19 @@ body {
 
 .btn-secondary:hover:not(:disabled) {
   background: var(--btn-secondary-h);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  font-size: 0.8125rem;
+  padding: 0.3rem 0.75rem;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--bg-input);
+  color: var(--text);
 }
 
 /* ── GIF grid (CSS columns masonry) ─────────────────────── */

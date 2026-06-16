@@ -49,3 +49,16 @@ export async function fetchTrendingGifs(signal?: AbortSignal): Promise<GifUrlsRe
 export async function searchGifs(term: string, signal?: AbortSignal): Promise<GifUrlsResponse> {
   return get<GifUrlsResponse>(`/api/gifs/search?term=${encodeURIComponent(term)}`, signal);
 }
+
+/** Removes all cached GIF responses from Redis. */
+export async function clearCache(): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}/api/cache`, { method: 'DELETE' });
+  } catch {
+    throw new ApiError('Unable to reach the server.', 0);
+  }
+  if (!response.ok) {
+    throw new ApiError(statusMessage(response.status), response.status);
+  }
+}
