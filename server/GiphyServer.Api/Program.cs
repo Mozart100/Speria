@@ -145,7 +145,7 @@ builder.Services.AddSwaggerGen(options =>
 // ------------------------------------------------------------------
 builder.Services
     .AddHealthChecks()
-    .AddRedis(redisConnString, name: "redis")
+    .AddCheck<RedisCacheHealthCheck>("redis")
     .AddCheck<GiphyHealthCheck>("giphy");
 
 // ------------------------------------------------------------------
