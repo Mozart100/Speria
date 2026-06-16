@@ -22,29 +22,30 @@ export default function GifSearch({ onTrending, onSearch, isLoading }: GifSearch
 
   return (
     <div className="gif-search">
-      <button className="btn btn-primary" onClick={onTrending} disabled={isLoading}>
-        Load Trending GIFs
+      <input
+        type="text"
+        className="search-input"
+        placeholder="Search GIFs..."
+        value={term}
+        onChange={(e) => setTerm(e.target.value)}
+        onKeyDown={handleKeyDown}
+        disabled={isLoading}
+        aria-label="Search term"
+      />
+      <button
+        className="btn btn-primary"
+        onClick={handleSearch}
+        disabled={isLoading || !term.trim()}
+      >
+        Search
       </button>
-
-      <div className="search-row">
-        <input
-          type="text"
-          className="search-input"
-          placeholder="Search GIFs…"
-          value={term}
-          onChange={(e) => setTerm(e.target.value)}
-          onKeyDown={handleKeyDown}
-          disabled={isLoading}
-          aria-label="Search term"
-        />
-        <button
-          className="btn btn-secondary"
-          onClick={handleSearch}
-          disabled={isLoading || !term.trim()}
-        >
-          Search
-        </button>
-      </div>
+      <button
+        className="btn btn-secondary"
+        onClick={onTrending}
+        disabled={isLoading}
+      >
+        Trending
+      </button>
     </div>
   );
 }

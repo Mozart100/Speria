@@ -1,3 +1,37 @@
+/* ── Theme variables ─────────────────────────────────────── */
+:root {
+  /* dark (default) */
+  --bg:            #0d1117;
+  --bg-surface:    #161b27;
+  --bg-input:      #1c2333;
+  --text:          #e6edf3;
+  --text-muted:    #8b949e;
+  --border:        #30363d;
+  --btn-primary:   #7c3aed;
+  --btn-primary-h: #6d28d9;
+  --btn-secondary: #21262d;
+  --btn-secondary-h: #30363d;
+  --gif-bg:        #1c2333;
+  --shadow:        0 1px 4px rgba(0, 0, 0, 0.5);
+  --toggle-icon:   "☀";
+}
+
+[data-theme="light"] {
+  --bg:            #f6f8fa;
+  --bg-surface:    #ffffff;
+  --bg-input:      #ffffff;
+  --text:          #24292f;
+  --text-muted:    #57606a;
+  --border:        #d0d7de;
+  --btn-primary:   #7c3aed;
+  --btn-primary-h: #6d28d9;
+  --btn-secondary: #eaeef2;
+  --btn-secondary-h: #d0d7de;
+  --gif-bg:        #e5e7eb;
+  --shadow:        0 1px 3px rgba(0, 0, 0, 0.12);
+  --toggle-icon:   "☾";
+}
+
 /* ── Reset ───────────────────────────────────────────────── */
 *, *::before, *::after {
   box-sizing: border-box;
@@ -6,18 +40,27 @@
 }
 
 /* ── Base ────────────────────────────────────────────────── */
+html {
+  transition: background-color 0.2s, color 0.2s;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
-  background: #f4f4f6;
-  color: #1a1a2e;
+  background: var(--bg);
+  color: var(--text);
   min-height: 100vh;
 }
 
 /* ── Layout ──────────────────────────────────────────────── */
+.app-wrapper {
+  position: relative;
+  min-height: 100vh;
+}
+
 .main {
-  max-width: 1200px;
+  max-width: 1280px;
   margin: 0 auto;
-  padding: 2.5rem 1rem 4rem;
+  padding: 3rem 1.25rem 4rem;
 }
 
 .title {
@@ -25,55 +68,79 @@ body {
   font-weight: 700;
   text-align: center;
   letter-spacing: -0.5px;
+  color: var(--text);
+  margin-bottom: 2rem;
 }
 
-.subtitle {
-  text-align: center;
-  color: #6b7280;
-  margin-top: 0.375rem;
-  margin-bottom: 2.25rem;
-  font-size: 1rem;
+/* ── Theme toggle ────────────────────────────────────────── */
+.theme-toggle {
+  position: fixed;
+  top: 1rem;
+  right: 1.25rem;
+  z-index: 100;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  color: var(--text);
+  font-size: 1.1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+.theme-toggle:hover {
+  background: var(--bg-input);
 }
 
 /* ── Search bar ──────────────────────────────────────────── */
 .gif-search {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 0.875rem;
-  margin-bottom: 2.5rem;
-}
-
-.search-row {
-  display: flex;
   gap: 0.5rem;
-  width: 100%;
-  max-width: 520px;
+  max-width: 900px;
+  margin: 0 auto 1.25rem;
 }
 
 .search-input {
   flex: 1;
-  padding: 0.625rem 1rem;
-  border: 1.5px solid #d1d5db;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 1rem;
   outline: none;
-  background: #fff;
+  background: var(--bg-input);
+  color: var(--text);
   transition: border-color 0.15s;
 }
 
+.search-input::placeholder {
+  color: var(--text-muted);
+}
+
 .search-input:focus {
-  border-color: #4f46e5;
+  border-color: var(--btn-primary);
 }
 
 .search-input:disabled {
-  background: #f9fafb;
-  color: #9ca3af;
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Status text ─────────────────────────────────────────── */
+.status-text {
+  text-align: center;
+  font-size: 0.9375rem;
+  color: var(--text-muted);
+  margin-bottom: 1.75rem;
 }
 
 /* ── Buttons ─────────────────────────────────────────────── */
 .btn {
-  padding: 0.625rem 1.25rem;
+  padding: 0.75rem 1.25rem;
   border: none;
   border-radius: 8px;
   font-size: 0.9375rem;
@@ -89,24 +156,25 @@ body {
 }
 
 .btn-primary {
-  background: #4f46e5;
+  background: var(--btn-primary);
   color: #fff;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: #4338ca;
+  background: var(--btn-primary-h);
 }
 
 .btn-secondary {
-  background: #e5e7eb;
-  color: #374151;
+  background: var(--btn-secondary);
+  color: var(--text);
+  border: 1px solid var(--border);
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background: #d1d5db;
+  background: var(--btn-secondary-h);
 }
 
-/* ── GIF grid (CSS columns for masonry effect) ───────────── */
+/* ── GIF grid (CSS columns masonry) ─────────────────────── */
 .gif-grid {
   columns: 2;
   gap: 0.75rem;
@@ -119,10 +187,10 @@ body {
 .gif-item {
   break-inside: avoid;
   margin-bottom: 0.75rem;
-  border-radius: 10px;
+  border-radius: 12px;
   overflow: hidden;
-  background: #e5e7eb;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  background: var(--gif-bg);
+  box-shadow: var(--shadow);
 }
 
 .gif-item img {
@@ -138,15 +206,15 @@ body {
   align-items: center;
   gap: 0.875rem;
   padding: 4rem 0;
-  color: #6b7280;
+  color: var(--text-muted);
   font-size: 0.9375rem;
 }
 
 .spinner {
   width: 42px;
   height: 42px;
-  border: 3px solid #e5e7eb;
-  border-top-color: #4f46e5;
+  border: 3px solid var(--border);
+  border-top-color: var(--btn-primary);
   border-radius: 50%;
   animation: spin 0.65s linear infinite;
 }
@@ -161,20 +229,28 @@ body {
   align-items: center;
   gap: 0.5rem;
   padding: 1rem 1.25rem;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
+  background: rgba(185, 28, 28, 0.15);
+  border: 1px solid rgba(185, 28, 28, 0.4);
   border-radius: 8px;
-  color: #b91c1c;
+  color: #fca5a5;
   font-size: 0.9375rem;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+[data-theme="light"] .error-message {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #b91c1c;
 }
 
 .retry-button {
   margin-left: auto;
   padding: 0.375rem 0.875rem;
-  border: 1px solid #b91c1c;
+  border: 1px solid rgba(185, 28, 28, 0.5);
   border-radius: 6px;
   background: transparent;
-  color: #b91c1c;
+  color: #fca5a5;
   font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
@@ -182,7 +258,16 @@ body {
   white-space: nowrap;
 }
 
+[data-theme="light"] .retry-button {
+  border-color: #b91c1c;
+  color: #b91c1c;
+}
+
 .retry-button:hover {
+  background: rgba(185, 28, 28, 0.2);
+}
+
+[data-theme="light"] .retry-button:hover {
   background: #b91c1c;
   color: #fff;
 }
@@ -191,6 +276,6 @@ body {
 .empty-state {
   text-align: center;
   padding: 4rem 0;
-  color: #9ca3af;
+  color: var(--text-muted);
   font-size: 1rem;
 }

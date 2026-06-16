@@ -5,6 +5,7 @@ import GifSearch from '@/components/GifSearch';
 import GifGrid from '@/components/GifGrid';
 import LoadingState from '@/components/LoadingState';
 import ErrorMessage from '@/components/ErrorMessage';
+import ThemeToggle from '@/components/ThemeToggle';
 import { fetchTrendingGifs, searchGifs, ApiError } from '@/services/gifApi';
 import type { GifUrlResponse } from '@/models/gifModels';
 
@@ -16,12 +17,12 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [searchTerm, setSearchTerm] = useState<string | undefined>(undefined);
+  const [status, setStatus] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const lastActionRef = useRef<LastAction | null>(null);
 
   const execute = useCallback(async (action: LastAction) => {
-    // Cancel any in-flight request before starting a new one.
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -29,20 +30,22 @@ export default function Home() {
 
     setLoading(true);
     setError(null);
+    setStatus(null);
 
     try {
       let data;
       if (action.type === 'trending') {
         setSearchTerm(undefined);
         data = await fetchTrendingGifs(controller.signal);
+        setStatus('Showing trending GIFs');
       } else {
         setSearchTerm(action.term);
         data = await searchGifs(action.term, controller.signal);
+        setStatus(`Showing results for "${action.term}"`);
       }
       setGifs(data.gifs);
       setHasLoaded(true);
     } catch (err) {
-      // Ignore aborted requests — a newer one is already in flight.
       if (err instanceof DOMException && err.name === 'AbortError') return;
       setError(
         err instanceof ApiError
@@ -63,15 +66,20 @@ export default function Home() {
   }, [execute]);
 
   return (
-    <main className="main">
-      <h1 className="title">GIF Explorer</h1>
-      <p className="subtitle">Discover and search trending GIFs</p>
+    <div className="app-wrapper">
+      <ThemeToggle />
 
-      <GifSearch onTrending={handleTrending} onSearch={handleSearch} isLoading={loading} />
+      <main className="main">
+        <h1 className="title">Speria GIFs</h1>
 
-      {loading && <LoadingState />}
-      {!loading && error && <ErrorMessage message={error} onRetry={handleRetry} />}
-      {!loading && !error && hasLoaded && <GifGrid gifs={gifs} searchTerm={searchTerm} />}
-    </main>
+        <GifSearch onTrending={handleTrending} onSearch={handleSearch} isLoading={loading} />
+
+        {!loading && status && <p className="status-text">{status}</p>}
+
+        {loading && <LoadingState />}
+        {!loading && error && <ErrorMessage message={error} onRetry={handleRetry} />}
+        {!loading && !error && hasLoaded && <GifGrid gifs={gifs} searchTerm={searchTerm} />}
+      </main>
+    </div>
   );
 }

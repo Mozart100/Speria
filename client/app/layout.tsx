@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'GIF Explorer',
+  title: 'Speria GIFs',
   description: 'Discover and search trending GIFs powered by Giphy.',
 };
 
