@@ -86,6 +86,18 @@ Controllers depend only on `IGifService`. The decorator is inserted transparentl
 
 ---
 
+## NuGet Packages
+
+| Package | Version | Purpose |
+|---|---|---|
+| `AutoMapper` | 14.0.0 | DTO → application model mapping |
+| `Serilog.AspNetCore` | 8.0.3 | Serilog hosting integration (`UseSerilog`) |
+| `Serilog.Sinks.Seq` | 8.0.0 | Structured log sink for Seq |
+| `StackExchange.Redis` | 2.8.24 | Redis client for caching |
+| `Swashbuckle.AspNetCore` | 6.9.0 | Swagger / OpenAPI docs |
+
+---
+
 ## Docker Configuration
 
 ### Dockerfile (multi-stage)
@@ -112,6 +124,32 @@ Program.cs maps flat env vars (`GIPHY_API_KEY`, `GIPHY_BASE_URL`, `CACHE_TTL_MIN
 
 ---
 
+## CORS
+
+Configured in `Program.cs` for local development:
+
+```csharp
+builder.Services.AddCors(options =>
+    options.AddDefaultPolicy(policy =>
+        policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
+// ...
+app.UseCors(); // placed before UseRequestLogging and MapControllers
+```
+
+Permissive policy is intentional for `local-docker-compose` use. In production, restrict origins to the known client URL.
+
+---
+
+## Swagger / OpenAPI
+
+Available at `GET /swagger` in `Development` environment only.
+
+- Powered by `Swashbuckle.AspNetCore`
+- XML doc comments from the project are included (via `<GenerateDocumentationFile>true</GenerateDocumentationFile>` in the `.csproj`)
+- Endpoint: `/swagger/v1/swagger.json`
+
+---
+
 ## Seq Logging
 
 ### Setup
@@ -135,6 +173,16 @@ Program.cs maps flat env vars (`GIPHY_API_KEY`, `GIPHY_BASE_URL`, `CACHE_TTL_MIN
 | Request body (≤ 64 KB) | ✓ |
 | Response status code | ✓ |
 | Elapsed milliseconds | ✓ |
+
+### Controller Logging (`GifsController`)
+
+```
+Received request for trending GIFs
+Returning {GifCount} trending GIFs
+
+Received Giphy search request {SearchTerm}
+Returning {GifCount} GIFs for search term {SearchTerm}
+```
 
 ### Giphy Client Logging (`GiphyHttpClient`)
 

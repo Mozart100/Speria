@@ -33,6 +33,8 @@ client/
 │   └── gifApi.ts           # All fetch calls — never inside components
 ├── models/
 │   └── gifModels.ts        # TypeScript interfaces for API contracts
+├── .gitignore              # Excludes node_modules/, .next/, build artefacts
+├── .dockerignore           # Excludes node_modules/, .next/ from Docker build context
 ├── next.config.ts          # Next.js config with API rewrites
 ├── package.json
 └── tsconfig.json
