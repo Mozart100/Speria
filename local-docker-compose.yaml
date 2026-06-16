@@ -12,6 +12,11 @@ services:
       - "5341:80"
     networks:
       - app-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
@@ -21,13 +26,19 @@ services:
       - "6379:6379"
     networks:
       - app-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   redis-ui:
     image: redis/redisinsight:latest
     container_name: redis-ui
     restart: unless-stopped
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     ports:
       - "5540:5540"
     networks:
@@ -39,8 +50,10 @@ services:
     container_name: giphy-server
     restart: unless-stopped
     depends_on:
-      - seq
-      - redis
+      redis:
+        condition: service_healthy
+      seq:
+        condition: service_healthy
     environment:
       ASPNETCORE_ENVIRONMENT: "Development"
       ASPNETCORE_URLS: "http://+:8080"
@@ -53,6 +66,12 @@ services:
       - "8080:8080"
     networks:
       - app-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   client:
     build:
@@ -60,7 +79,8 @@ services:
     container_name: giphy-client
     restart: unless-stopped
     depends_on:
-      - server
+      server:
+        condition: service_healthy
     environment:
       # Empty → browser fetch uses relative /api/... paths that Next.js rewrites to the server.
       NEXT_PUBLIC_API_BASE_URL: ""

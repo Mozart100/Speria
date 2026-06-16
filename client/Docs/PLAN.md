@@ -83,6 +83,19 @@ async rewrites() {
 }
 ```
 
+### Container Startup Order
+
+All inter-service dependencies use `condition: service_healthy`, so Docker Compose enforces this sequence:
+
+```
+redis   → healthy (redis-cli ping)
+seq     → healthy (wget http://localhost)
+server  → healthy (wget http://localhost:8080/health)
+client  → starts
+```
+
+The client container will not start until the server passes its health check. This prevents the Next.js dev server from starting and immediately failing with connection errors on first render.
+
 ### Local Development (without Docker)
 
 ```bash

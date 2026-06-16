@@ -108,6 +108,30 @@ Run stage:    mcr.microsoft.com/dotnet/aspnet:8.0
 Exposed port: 8080
 ```
 
+### Container Startup Order
+
+Docker Compose waits for each dependency to pass its health check before starting the next service:
+
+```
+redis   (healthy: redis-cli ping)
+seq     (healthy: wget http://localhost)
+  └── server  (healthy: wget http://localhost:8080/health)
+        └── client  (starts after server is healthy)
+```
+
+`depends_on` uses `condition: service_healthy` for all inter-service dependencies.
+
+### Server Docker Health Check
+
+```yaml
+healthcheck:
+  test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
+  interval: 10s
+  timeout: 5s
+  retries: 5
+  start_period: 15s   # gives the .NET runtime time to JIT before checks begin
+```
+
 ### Environment Variables
 
 | Variable | Purpose | Default (appsettings) |
@@ -121,6 +145,37 @@ Exposed port: 8080
 | `CACHE_TTL_MINUTES` | How long to cache responses | `60` |
 
 Program.cs maps flat env vars (`GIPHY_API_KEY`, `GIPHY_BASE_URL`, `CACHE_TTL_MINUTES`) into the nested config sections consumed by `IOptions<T>`.
+
+---
+
+## Health Checks
+
+### Endpoint
+
+`GET /health` — returns `HTTP 200 Healthy` when the application is ready.
+
+Registered in `Program.cs` using the built-in ASP.NET Core middleware:
+
+```csharp
+builder.Services.AddHealthChecks();
+// ...
+app.MapHealthChecks("/health");
+```
+
+No custom controller. `MapHealthChecks` is a minimal-API endpoint — it sits outside the MVC controller pipeline and is not processed by `RequestLoggingMiddleware`.
+
+### Future Extensions
+
+Additional checks can be added to the `AddHealthChecks()` call without any other changes:
+
+```csharp
+builder.Services.AddHealthChecks()
+    .AddRedis(redisConnectionString, name: "redis")
+    .AddUrlGroup(new Uri("https://api.giphy.com"), name: "giphy")
+    .AddSqlServer(connectionString, name: "database");
+```
+
+Each named check appears in the `/health` response body (JSON) when using `MapHealthChecks` with `ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse`.
 
 ---
 

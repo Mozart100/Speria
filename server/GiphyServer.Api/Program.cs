@@ -101,7 +101,16 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 // ------------------------------------------------------------------
-// 11. Problem details
+// 11. Health checks
+//     Base liveness check is built-in. Add provider-specific checks here
+//     as the project grows, e.g.:
+//       .AddRedis(connectionString)
+//       .AddUrlGroup(new Uri("https://api.giphy.com"), "giphy")
+// ------------------------------------------------------------------
+builder.Services.AddHealthChecks();
+
+// ------------------------------------------------------------------
+// 12. Problem details
 // ------------------------------------------------------------------
 builder.Services.AddProblemDetails();
 
@@ -141,6 +150,7 @@ app.UseExceptionHandler(errorApp =>
 
 app.UseCors();
 app.UseRequestLogging();
+app.MapHealthChecks("/health");
 app.MapControllers();
 
 app.Run();
