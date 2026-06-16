@@ -1,7 +1,10 @@
 using GiphyServer.Api.Clients;
 using GiphyServer.Api.Configuration;
+using GiphyServer.Api.HealthChecks;
 using GiphyServer.Api.Startup;
+using Microsoft.Extensions.Http.Resilience;
 using Microsoft.AspNetCore.Mvc;
+using Polly;
 using System.Reflection;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -47,7 +50,9 @@ builder.Services.Configure<CacheOptions>(
 builder.Services.AddAutoMapper(typeof(AutoMapperProfile));
 
 // ------------------------------------------------------------------
-// 5. Typed HttpClient — IGiphyClient → GiphyHttpClient
+// 5. Typed HttpClient with Polly resilience pipeline
+//    Retry:          exponential back-off (1s → 2s → 4s), transient 5xx only
+//    Circuit breaker: open after 5 failures, reset after 30 seconds
 // ------------------------------------------------------------------
 builder.Services
     .AddHttpClient<IGiphyClient, GiphyHttpClient>(client =>
@@ -56,12 +61,40 @@ builder.Services
                       ?? "https://api.giphy.com/v1/";
         client.BaseAddress = new Uri(baseUrl);
         client.DefaultRequestHeaders.Add("Accept", "application/json");
+    })
+    .AddResilienceHandler("giphy", pipeline =>
+    {
+        // Retry on connection errors and 5xx only — NOT on 401/403/429.
+        pipeline.AddRetry(new HttpRetryStrategyOptions
+        {
+            MaxRetryAttempts = 3,
+            Delay             = TimeSpan.FromSeconds(1),
+            BackoffType       = DelayBackoffType.Exponential,
+            UseJitter         = false,
+            ShouldHandle      = new PredicateBuilder<HttpResponseMessage>()
+                .Handle<HttpRequestException>()
+                .HandleResult(r => (int)r.StatusCode >= 500),
+        });
+
+        // Circuit breaker: stop hammering Giphy when it is persistently down.
+        pipeline.AddCircuitBreaker(new HttpCircuitBreakerStrategyOptions
+        {
+            HandledEventsAllowedBeforeBreaking = 5,
+            DurationOfBreak                    = TimeSpan.FromSeconds(30),
+            ShouldHandle                       = new PredicateBuilder<HttpResponseMessage>()
+                .Handle<HttpRequestException>()
+                .HandleResult(r => (int)r.StatusCode >= 500),
+        });
     });
 
 // ------------------------------------------------------------------
-// 6. Redis + ICacheService
+// 6. Redis connection string — resolved once and shared with health checks
 // ------------------------------------------------------------------
-builder.AddRedis();
+var redisConnString = Environment.GetEnvironmentVariable("REDIS_CONNECTION_STRING")
+                      ?? builder.Configuration["Redis:ConnectionString"]
+                      ?? "localhost:6379";
+
+builder.AddRedis(redisConnString);
 
 // ------------------------------------------------------------------
 // 7. Application services — decorator chain:
@@ -101,52 +134,33 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 // ------------------------------------------------------------------
-// 11. Health checks
-//     Base liveness check is built-in. Add provider-specific checks here
-//     as the project grows, e.g.:
-//       .AddRedis(connectionString)
-//       .AddUrlGroup(new Uri("https://api.giphy.com"), "giphy")
+// 11. Health checks — Redis connectivity + Giphy API reachability
 // ------------------------------------------------------------------
-builder.Services.AddHealthChecks();
+builder.Services
+    .AddHealthChecks()
+    .AddRedis(redisConnString, name: "redis")
+    .AddCheck<GiphyHealthCheck>("giphy");
 
 // ------------------------------------------------------------------
-// 12. Problem details
+// 12. Global exception handler + ProblemDetails
+//     GlobalExceptionHandler maps domain exceptions to RFC 7807 responses.
 // ------------------------------------------------------------------
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
 
 var app = builder.Build();
 
 // ------------------------------------------------------------------
-// 12. Middleware pipeline
+// 13. Middleware pipeline
 // ------------------------------------------------------------------
+app.UseExceptionHandler();
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI(ui =>
         ui.SwaggerEndpoint("/swagger/v1/swagger.json", "GiphyServer API v1"));
 }
-
-app.UseExceptionHandler(errorApp =>
-{
-    errorApp.Run(async context =>
-    {
-        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
-        context.Response.ContentType = "application/problem+json";
-
-        var problem = new ProblemDetails
-        {
-            Status = StatusCodes.Status500InternalServerError,
-            Title = "An unexpected error occurred.",
-            Detail = app.Environment.IsDevelopment()
-                ? context.Features
-                    .Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()
-                    ?.Error.Message
-                : null
-        };
-
-        await context.Response.WriteAsJsonAsync(problem);
-    });
-});
 
 app.UseCors();
 app.UseRequestLogging();

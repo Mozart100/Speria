@@ -25,11 +25,16 @@ server/
     │   └── RedisCacheService.cs           # StackExchange.Redis implementation
     ├── Clients/
     │   ├── IGiphyClient.cs                # External-API abstraction
-    │   └── GiphyHttpClient.cs             # HttpClient implementation + Giphy logging
+    │   └── GiphyHttpClient.cs             # HttpClient implementation + exception classification
     ├── Configuration/
     │   └── GiphyOptions.cs                # Strongly-typed Giphy config
     ├── Controllers/
-    │   └── GifsController.cs              # Thin HTTP boundary
+    │   ├── GifsController.cs              # Thin HTTP boundary
+    │   └── HealthController.cs            # /health endpoint (Swagger-visible)
+    ├── Exceptions/
+    │   └── GiphyException.cs              # GiphyAuthenticationException / RateLimit / Unavailable
+    ├── HealthChecks/
+    │   └── GiphyHealthCheck.cs            # IHealthCheck — pings Giphy API
     ├── Models/
     │   ├── GiphyResponse.cs               # Internal Giphy API DTOs
     │   ├── GifUrlResponse.cs              # Single-GIF application model
@@ -42,8 +47,9 @@ server/
     │   ├── AutoMapperProfile.cs           # DTO → model mappings
     │   ├── CacheOptions.cs                # Cache TTL config binding
     │   ├── CacheServiceRegistration.cs    # Decorator wiring helper
+    │   ├── GlobalExceptionHandler.cs      # IExceptionHandler → RFC 7807 ProblemDetails
     │   ├── LoggingStartup.cs              # UseRequestLogging() extension
-    │   ├── RedisStartup.cs                # AddRedis() builder extension
+    │   ├── RedisStartup.cs                # AddRedis(connectionString) builder extension
     │   ├── RequestLoggingMiddleware.cs    # Per-request structured log
     │   └── SerilogExtensions.cs          # AddSerilogLogging() builder extension
     ├── Program.cs                         # Composition root
@@ -90,7 +96,9 @@ Controllers depend only on `IGifService`. The decorator is inserted transparentl
 
 | Package | Version | Purpose |
 |---|---|---|
+| `AspNetCore.HealthChecks.Redis` | 8.0.1 | Redis health check extension |
 | `AutoMapper` | 14.0.0 | DTO → application model mapping |
+| `Microsoft.Extensions.Http.Resilience` | 8.10.0 | Polly retry + circuit breaker for HttpClient |
 | `Serilog.AspNetCore` | 8.0.3 | Serilog hosting integration (`UseSerilog`) |
 | `Serilog.Sinks.Seq` | 8.0.0 | Structured log sink for Seq |
 | `StackExchange.Redis` | 2.8.24 | Redis client for caching |
@@ -125,12 +133,14 @@ seq     (healthy: wget http://localhost)
 
 ```yaml
 healthcheck:
-  test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
+  test: ["CMD", "curl", "-fs", "http://localhost:8080/health"]
   interval: 10s
   timeout: 5s
   retries: 5
   start_period: 15s   # gives the .NET runtime time to JIT before checks begin
 ```
+
+`curl` is installed in the runtime image via `apt-get install -y --no-install-recommends curl` in the Dockerfile — the Debian slim base image does not include it by default.
 
 ### Environment Variables
 
@@ -152,30 +162,39 @@ Program.cs maps flat env vars (`GIPHY_API_KEY`, `GIPHY_BASE_URL`, `CACHE_TTL_MIN
 
 ### Endpoint
 
-`GET /health` — returns `HTTP 200 Healthy` when the application is ready.
+`GET /health` — exposed by `HealthController` (visible in Swagger). Returns structured JSON with per-check results.
 
-Registered in `Program.cs` using the built-in ASP.NET Core middleware:
+| Status | HTTP | Meaning |
+|---|---|---|
+| Healthy | 200 | All checks pass |
+| Unhealthy | 503 | One or more checks failed |
 
-```csharp
-builder.Services.AddHealthChecks();
-// ...
-app.MapHealthChecks("/health");
-```
-
-No custom controller. `MapHealthChecks` is a minimal-API endpoint — it sits outside the MVC controller pipeline and is not processed by `RequestLoggingMiddleware`.
-
-### Future Extensions
-
-Additional checks can be added to the `AddHealthChecks()` call without any other changes:
+### Registered Checks
 
 ```csharp
-builder.Services.AddHealthChecks()
-    .AddRedis(redisConnectionString, name: "redis")
-    .AddUrlGroup(new Uri("https://api.giphy.com"), name: "giphy")
-    .AddSqlServer(connectionString, name: "database");
+builder.Services
+    .AddHealthChecks()
+    .AddRedis(redisConnString, name: "redis")    // from AspNetCore.HealthChecks.Redis
+    .AddCheck<GiphyHealthCheck>("giphy");         // custom — calls Giphy trending endpoint
 ```
 
-Each named check appears in the `/health` response body (JSON) when using `MapHealthChecks` with `ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse`.
+### GiphyHealthCheck
+
+- Calls `IGiphyClient.GetTrendingAsync` with a 3-second cancellation token to stay within Docker's health-check timeout.
+- Returns `Healthy` on success, `Unhealthy` with the exception on any failure.
+- Polly retry/circuit-breaker policies apply (via the typed HttpClient pipeline) but the 3-second timeout bounds worst-case duration.
+
+### Response Format
+
+```json
+{
+  "status": "Healthy",
+  "checks": {
+    "redis":  { "status": "Healthy",   "description": null },
+    "giphy":  { "status": "Healthy",   "description": "Giphy API is reachable." }
+  }
+}
+```
 
 ---
 
@@ -369,10 +388,91 @@ Seq will show clearly: which URLs came from cache, which came from Giphy, which 
 
 ---
 
+---
+
+## Global Exception Handler
+
+`GlobalExceptionHandler` implements `IExceptionHandler` (ASP.NET Core 8). Registered via `AddExceptionHandler<GlobalExceptionHandler>()` and activated by `app.UseExceptionHandler()`.
+
+### Exception → HTTP mapping
+
+| Exception | HTTP | Problem Type |
+|---|---|---|
+| `GiphyAuthenticationException` | 401 | `/problems/giphy-authentication` |
+| `GiphyRateLimitException` | 429 | `/problems/giphy-rate-limit` |
+| `GiphyUnavailableException` | 502 | `/problems/giphy-unavailable` |
+| Any other | 500 | `/problems/internal-error` |
+
+### Response shape (RFC 7807)
+
+```json
+{
+  "type":   "https://api.speria.dev/problems/giphy-unavailable",
+  "title":  "Giphy service is unavailable.",
+  "status": 502,
+  "detail": "An unexpected error occurred."
+}
+```
+
+Stack traces are never included. Giphy-specific exceptions log at `Warning`; unknown exceptions log at `Error`.
+
+---
+
+## Giphy Error Classification
+
+`GiphyHttpClient.FetchAsync` classifies Giphy responses before they reach controllers:
+
+| Giphy response | Exception thrown |
+|---|---|
+| HTTP 401 / 403 | `GiphyAuthenticationException` |
+| HTTP 429 | `GiphyRateLimitException` |
+| HTTP 5xx | `GiphyUnavailableException` |
+| Connection / timeout | `GiphyUnavailableException` |
+| Circuit breaker open (`BrokenCircuitException`) | `GiphyUnavailableException` |
+
+---
+
+## Polly Resilience Pipeline
+
+Configured on the typed `GiphyHttpClient` via `AddResilienceHandler("giphy", ...)`.
+
+### Retry
+
+- Max attempts: 3
+- Back-off: exponential (1 s → 2 s → 4 s)
+- Handles: `HttpRequestException` and HTTP 5xx responses
+- Does **not** retry 401, 403, or 429 (non-transient)
+
+### Circuit Breaker
+
+- Opens after: 5 consecutive failures
+- Break duration: 30 seconds
+- Same `ShouldHandle` predicate as retry
+- When open: `BrokenCircuitException` is thrown → caught in `GiphyHttpClient` → `GiphyUnavailableException`
+
+---
+
+## Swagger Error Responses
+
+All endpoints document the full error surface via `[ProducesResponseType]`:
+
+| Status | Meaning |
+|---|---|
+| 200 | Success |
+| 400 | Bad request (search only — empty term) |
+| 401 | Giphy auth failure |
+| 429 | Rate limit exceeded |
+| 500 | Internal server error |
+| 502 | Giphy unavailable |
+| 503 | Application unhealthy |
+
+---
+
 ## Final Endpoints
 
 | Endpoint | Description |
 |---|---|
 | `GET /api/gifs/trending` | Returns trending GIF URLs (cached) |
 | `GET /api/gifs/search?term=cats` | Returns GIFs matching a term (cached per term) |
+| `GET /health` | Application + dependency health (Redis, Giphy) |
 | `GET /swagger` | Swagger UI (Development only) |

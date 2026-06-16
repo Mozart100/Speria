@@ -2,13 +2,18 @@ import type { GifUrlResponse } from '@/models/gifModels';
 
 interface GifGridProps {
   gifs: GifUrlResponse[];
+  searchTerm?: string;
 }
 
-export default function GifGrid({ gifs }: GifGridProps) {
+export default function GifGrid({ gifs, searchTerm }: GifGridProps) {
   if (gifs.length === 0) {
     return (
       <div className="empty-state">
-        <p>No GIFs found. Try a different search term or load trending GIFs.</p>
+        <p>
+          {searchTerm
+            ? `No results found for "${searchTerm}".`
+            : 'No GIFs found. Try a different search term or load trending GIFs.'}
+        </p>
       </div>
     );
   }

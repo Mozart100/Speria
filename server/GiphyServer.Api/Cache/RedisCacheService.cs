@@ -26,7 +26,7 @@ public sealed class RedisCacheService : ICacheService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Redis GET failed for key {CacheKey}", key);
+            _logger.LogWarning(ex, "Redis unavailable for key {CacheKey}. Falling back to Giphy.", key);
             return default;
         }
     }
@@ -40,7 +40,7 @@ public sealed class RedisCacheService : ICacheService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Redis SET failed for key {CacheKey}", key);
+            _logger.LogWarning(ex, "Redis SET failed for key {CacheKey}. Cache write skipped.", key);
         }
     }
 }

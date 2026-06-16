@@ -1,13 +1,16 @@
 using GiphyServer.Api.Configuration;
+using GiphyServer.Api.Exceptions;
 using GiphyServer.Api.Models;
 using Microsoft.Extensions.Options;
+using Polly.CircuitBreaker;
+using System.Net;
 
 namespace GiphyServer.Api.Clients;
 
 /// <summary>
 /// HTTP implementation of <see cref="IGiphyClient"/> backed by a typed <see cref="HttpClient"/>
-/// registered via HttpClientFactory. Handles request construction, authentication,
-/// and deserialization of Giphy API responses.
+/// registered via HttpClientFactory. Polly retry and circuit-breaker policies are applied
+/// at the HttpClient pipeline level — this class handles classification of final outcomes.
 /// </summary>
 public sealed class GiphyHttpClient : IGiphyClient
 {
@@ -15,10 +18,6 @@ public sealed class GiphyHttpClient : IGiphyClient
     private readonly string _apiKey;
     private readonly ILogger<GiphyHttpClient> _logger;
 
-    /// <summary>
-    /// Initialises a new instance of <see cref="GiphyHttpClient"/>.
-    /// The <see cref="HttpClient"/> base address is configured during DI registration.
-    /// </summary>
     public GiphyHttpClient(HttpClient httpClient, IOptions<GiphyOptions> options, ILogger<GiphyHttpClient> logger)
     {
         _httpClient = httpClient;
@@ -51,35 +50,43 @@ public sealed class GiphyHttpClient : IGiphyClient
 
         _logger.LogInformation(
             "Calling Giphy {GiphyEndpoint} | SearchTerm: {SearchTerm} | Url: {GiphyUrl}",
-            endpoint,
-            searchTerm ?? "(none)",
-            safeUrl);
+            endpoint, searchTerm ?? "(none)", safeUrl);
 
         HttpResponseMessage response;
         try
         {
             response = await _httpClient.GetAsync(relativeUrl, cancellationToken);
         }
+        catch (BrokenCircuitException ex)
+        {
+            _logger.LogError(ex,
+                "Giphy circuit breaker open for {GiphyEndpoint} | SearchTerm: {SearchTerm}",
+                endpoint, searchTerm ?? "(none)");
+            throw new GiphyUnavailableException("Giphy service circuit breaker is open.", ex);
+        }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
+            _logger.LogError(ex,
                 "Giphy request failed for {GiphyEndpoint} | SearchTerm: {SearchTerm} | Error: {ErrorMessage}",
-                endpoint,
-                searchTerm ?? "(none)",
-                ex.Message);
-            throw;
+                endpoint, searchTerm ?? "(none)", ex.Message);
+            throw new GiphyUnavailableException("Failed to reach Giphy API.", ex);
         }
 
         if (!response.IsSuccessStatusCode)
         {
-            _logger.LogError(
-                "Giphy {GiphyEndpoint} returned an error | SearchTerm: {SearchTerm} | StatusCode: {StatusCode}",
-                endpoint,
-                searchTerm ?? "(none)",
-                (int)response.StatusCode);
+            var statusCode = (int)response.StatusCode;
 
-            response.EnsureSuccessStatusCode();
+            _logger.LogError(
+                "Giphy {GiphyEndpoint} returned {StatusCode} | SearchTerm: {SearchTerm}",
+                endpoint, statusCode, searchTerm ?? "(none)");
+
+            if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+                throw new GiphyAuthenticationException($"Giphy API authentication failed with status {statusCode}.");
+
+            if (response.StatusCode == HttpStatusCode.TooManyRequests)
+                throw new GiphyRateLimitException("Giphy API rate limit exceeded.");
+
+            throw new GiphyUnavailableException($"Giphy API returned unexpected status {statusCode}.");
         }
 
         var result = await response.Content.ReadFromJsonAsync<GiphyResponse>(cancellationToken: cancellationToken)
@@ -87,10 +94,7 @@ public sealed class GiphyHttpClient : IGiphyClient
 
         _logger.LogInformation(
             "Giphy {GiphyEndpoint} succeeded | SearchTerm: {SearchTerm} | StatusCode: {StatusCode} | GifCount: {GifCount}",
-            endpoint,
-            searchTerm ?? "(none)",
-            (int)response.StatusCode,
-            result.Data.Count);
+            endpoint, searchTerm ?? "(none)", (int)response.StatusCode, result.Data.Count);
 
         return result;
     }

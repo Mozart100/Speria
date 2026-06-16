@@ -18,17 +18,18 @@ public sealed class HealthController : ControllerBase
         _healthCheckService = healthCheckService;
     }
 
-    /// <summary>Returns the overall health status of the application.</summary>
+    /// <summary>Returns the overall health status of the application and its dependencies.</summary>
     /// <remarks>
-    /// Returns <c>200 Healthy</c> when all registered checks pass.
+    /// Returns <c>200 Healthy</c> when all registered checks pass (Redis + Giphy API).
     /// Returns <c>503 Unhealthy</c> when any check fails.
-    /// Additional checks (Redis, Giphy, database) can be registered via
-    /// <c>builder.Services.AddHealthChecks().AddRedis(...)</c> without touching this controller.
+    /// The response body always includes per-check detail keyed by check name.
     /// </remarks>
-    /// <response code="200">Application is healthy.</response>
+    /// <response code="200">Application and all dependencies are healthy.</response>
+    /// <response code="500">An unexpected error occurred evaluating health.</response>
     /// <response code="503">One or more health checks failed.</response>
     [HttpGet]
     [ProducesResponseType(typeof(HealthResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     [ProducesResponseType(typeof(HealthResponse), StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> Get(CancellationToken cancellationToken)
     {

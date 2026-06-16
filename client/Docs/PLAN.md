@@ -90,7 +90,7 @@ All inter-service dependencies use `condition: service_healthy`, so Docker Compo
 ```
 redis   → healthy (redis-cli ping)
 seq     → healthy (curl http://localhost/api/diagnostics/status)
-server  → healthy (curl http://localhost:8080/health)
+server  → healthy (curl http://localhost:8080/health)  ← reflects Redis + Giphy checks
 client  → starts
 ```
 
@@ -150,8 +150,8 @@ All HTTP calls live in `services/gifApi.ts`. Components never call `fetch` direc
 GifSearch (user interaction)
     ↓ callback
 page.tsx (state owner)
-    ↓ calls
-gifApi.ts (fetch + error handling)
+    ↓ calls (with AbortSignal)
+gifApi.ts (fetch + ApiError classification)
     ↓ /api/gifs/trending  (relative — goes through Next.js rewrite)
 ASP.NET Core server
     ↓ CachingGiphyServiceDecorator checks Redis
@@ -159,7 +159,37 @@ ASP.NET Core server
 Giphy API
 ```
 
-The service layer throws a typed `Error` on non-OK responses, which the page catches and surfaces via the `error` state.
+`gifApi.ts` exports `ApiError` (extends `Error`) which carries the HTTP `status` code. `page.tsx` reads the status to show the right message. If `fetch` throws a network error (no response at all), an `ApiError` with `status: 0` is thrown with the message "Unable to reach the server."
+
+---
+
+## Error Handling
+
+### Status-specific messages
+
+| HTTP status | Message shown |
+|---|---|
+| Network failure (0) | Unable to reach the server. |
+| 401 | Giphy authentication failed. |
+| 429 | Rate limit exceeded. Please try again later. |
+| 502 | Giphy service is temporarily unavailable. |
+| 503 | Service is temporarily unavailable. |
+| Other | Unexpected server error. |
+
+### Retry Button
+
+`ErrorMessage` accepts an optional `onRetry` callback. When provided, a **Retry** button is rendered inside the error banner. Clicking it re-executes the last action (`trending` or `search`) without the user having to click the original button again.
+
+`page.tsx` tracks the last action in a `useRef<LastAction>` and passes `handleRetry` to `ErrorMessage`.
+
+### Request Cancellation (AbortController)
+
+`page.tsx` holds an `AbortController` ref. Before each new request:
+1. The previous controller is aborted (cancels the in-flight `fetch`).
+2. A new controller is created and its signal is passed to `fetchTrendingGifs` / `searchGifs`.
+3. `AbortError` is silently swallowed — it means a newer request replaced this one.
+
+This prevents stale responses from a slow earlier search overwriting a faster newer one.
 
 ---
 
@@ -199,8 +229,9 @@ React built-in (`useState`) — no external library needed at this scale.
 | Condition | What is shown |
 |---|---|
 | `loading === true` | `<LoadingState />` (spinner) |
-| `error !== null` | `<ErrorMessage message={error} />` |
-| `hasLoaded && gifs.length === 0` | Empty state message inside `<GifGrid />` |
+| `error !== null` | `<ErrorMessage message={error} onRetry={handleRetry} />` with Retry button |
+| `hasLoaded && gifs.length === 0 && searchTerm` | `No results found for "{searchTerm}".` inside `<GifGrid />` |
+| `hasLoaded && gifs.length === 0 && !searchTerm` | Generic empty-state message inside `<GifGrid />` |
 | `hasLoaded && gifs.length > 0` | Responsive `<GifGrid />` |
 | Initial (nothing loaded yet) | Nothing below the search bar |
 
