@@ -77,11 +77,14 @@ builder.Services
         });
 
         // Circuit breaker: stop hammering Giphy when it is persistently down.
+        // Polly v8 uses ratio-based circuit breaking: open when ≥5 requests in 60s all fail.
         pipeline.AddCircuitBreaker(new HttpCircuitBreakerStrategyOptions
         {
-            HandledEventsAllowedBeforeBreaking = 5,
-            DurationOfBreak                    = TimeSpan.FromSeconds(30),
-            ShouldHandle                       = new PredicateBuilder<HttpResponseMessage>()
+            MinimumThroughput = 5,
+            FailureRatio      = 1.0,
+            SamplingDuration  = TimeSpan.FromSeconds(60),
+            BreakDuration     = TimeSpan.FromSeconds(30),
+            ShouldHandle      = new PredicateBuilder<HttpResponseMessage>()
                 .Handle<HttpRequestException>()
                 .HandleResult(r => (int)r.StatusCode >= 500),
         });
